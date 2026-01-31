@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sermon AI - Pastoral Sermon Preparation</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>Sermon AI</h1>
+                <p class="tagline">From text to transformation</p>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-mode="chat">
+                    <span class="icon">💬</span>
+                    Chat
+                </button>
+                <button class="nav-btn" data-mode="prep">
+                    <span class="icon">📖</span>
+                    12-Module Prep
+                </button>
+                <button class="nav-btn" data-mode="tools">
+                    <span class="icon">🔧</span>
+                    Quick Tools
+                </button>
+            </nav>
+
+            <div class="quick-actions">
+                <h3>Quick Actions</h3>
+                <button class="action-btn" data-action="scriptures">Find Scriptures</button>
+                <button class="action-btn" data-action="illustrations">Get Illustrations</button>
+                <button class="action-btn" data-action="outline">Create Outline</button>
+                <button class="action-btn" data-action="series">Plan Series</button>
+            </div>
+
+            <div class="sidebar-footer">
+                <p class="philosophy">"Preaching is proclamation aimed at transformation, not information transfer."</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Chat Header -->
+            <header class="chat-header">
+                <div class="header-left">
+                    <h2 id="chat-title">Sermon Assistant</h2>
+                    <span id="chat-subtitle" class="subtitle">Ask anything about sermon preparation</span>
+                </div>
+                <button class="new-chat-btn" id="new-chat">+ New Chat</button>
+            </header>
+
+            <!-- Messages Container -->
+            <div class="messages-container" id="messages">
+                <div class="welcome-message">
+                    <div class="welcome-icon">📖</div>
+                    <h2>Welcome to Sermon AI</h2>
+                    <p>I'm your pastoral preparation assistant. I don't just generate content—I think like a pastor, communicator, and spiritual guide.</p>
+
+                    <div class="starter-prompts">
+                        <h3>Try asking:</h3>
+                        <button class="starter-btn">"Help me prepare a sermon on John 3:16"</button>
+                        <button class="starter-btn">"Find scriptures about hope in suffering"</button>
+                        <button class="starter-btn">"What's the sharp edge of Romans 8:28?"</button>
+                        <button class="starter-btn">"Help me create a bottom line for Psalm 23"</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea
+                        id="message-input"
+                        placeholder="Ask about sermon preparation, scriptures, illustrations..."
+                        rows="1"
+                    ></textarea>
+                    <button id="send-btn" class="send-btn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
+            </div>
+        </main>
+
+        <!-- Module Panel (hidden by default) -->
+        <aside class="module-panel" id="module-panel">
+            <div class="panel-header">
+                <h3>12-Module System</h3>
+                <button class="close-panel" id="close-panel">&times;</button>
+            </div>
+            <div class="module-list">
+                <div class="module-item" data-module="1">
+                    <span class="module-num">1</span>
+                    <div class="module-info">
+                        <strong>Define Preaching</strong>
+                        <small>Transformation goal</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="2">
+                    <span class="module-num">2</span>
+                    <div class="module-info">
+                        <strong>Identify the People</strong>
+                        <small>Audience awareness</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="3">
+                    <span class="module-num">3</span>
+                    <div class="module-info">
+                        <strong>Pick Text & Target</strong>
+                        <small>Scripture anchor</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="4">
+                    <span class="module-num">4</span>
+                    <div class="module-info">
+                        <strong>Original Context</strong>
+                        <small>Exegesis</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="5">
+                    <span class="module-num">5</span>
+                    <div class="module-info">
+                        <strong>Find Movement</strong>
+                        <small>Text journey</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="6">
+                    <span class="module-num">6</span>
+                    <div class="module-info">
+                        <strong>Surprise & Offense</strong>
+                        <small>Sharp edge</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="7">
+                    <span class="module-num">7</span>
+                    <div class="module-info">
+                        <strong>Bridge to Today</strong>
+                        <small>Modern application</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="8">
+                    <span class="module-num">8</span>
+                    <div class="module-info">
+                        <strong>Bottom Line</strong>
+                        <small>One sentence</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="9">
+                    <span class="module-num">9</span>
+                    <div class="module-info">
+                        <strong>Build Structure</strong>
+                        <small>Movements & seams</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="10">
+                    <span class="module-num">10</span>
+                    <div class="module-info">
+                        <strong>Applications</strong>
+                        <small>Specific & embodied</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="11">
+                    <span class="module-num">11</span>
+                    <div class="module-info">
+                        <strong>Gospel Center</strong>
+                        <small>Jesus is central</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+                <div class="module-item" data-module="12">
+                    <span class="module-num">12</span>
+                    <div class="module-info">
+                        <strong>Preacher Formation</strong>
+                        <small>Personal preparation</small>
+                    </div>
+                    <span class="module-status pending"></span>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
