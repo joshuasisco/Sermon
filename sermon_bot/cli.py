@@ -1,14 +1,22 @@
-"""Command-line interface for Sermon AI Bot."""
+"""
+Command-line interface for the 12-Module Sermon Preparation System.
+
+This CLI guides preachers through a pastoral preparation process
+that prioritizes transformation over information.
+"""
 
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt, Confirm
+from rich.table import Table
 
 from .config import Config
 from .generator import SermonGenerator
@@ -16,12 +24,25 @@ from .generator import SermonGenerator
 
 console = Console()
 
+# Session storage directory
+SESSIONS_DIR = Path("sessions")
+
 
 def print_result(content: str, title: str = "Result"):
     """Print formatted result to console."""
     console.print()
     console.print(Panel(Markdown(content), title=title, border_style="green"))
     console.print()
+
+
+def print_module_header(module_num: int, module_name: str):
+    """Print a module header."""
+    console.print()
+    console.print(Panel(
+        f"[bold white]Module {module_num}[/bold white]\n{module_name}",
+        border_style="blue",
+        padding=(1, 2)
+    ))
 
 
 def save_to_file(content: str, prefix: str = "sermon") -> str:
@@ -39,7 +60,7 @@ def check_config():
     config = Config.load()
     if not config.validate():
         console.print(
-            "[red]Error:[/red] API key not configured. "
+            "[red]Error:[/red] API key not configured.\n"
             "Please copy .env.example to .env and add your API key.",
             style="bold"
         )
@@ -48,177 +69,300 @@ def check_config():
     return config
 
 
-@click.group()
-@click.version_option(version="1.0.0")
-def cli():
-    """Sermon AI Bot - Your AI-powered sermon writing assistant.
+def show_progress_table(generator: SermonGenerator):
+    """Display a progress table showing completed modules."""
+    progress = generator.get_progress()
 
-    Generate sermons, outlines, illustrations, and more using AI.
+    table = Table(title="Sermon Preparation Progress", border_style="blue")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Module", style="cyan")
+    table.add_column("Status", justify="center")
+
+    for i in range(1, 13):
+        name = generator.get_module_name(i)
+        if i in progress["completed_modules"]:
+            status = "[green]Complete[/green]"
+        elif i == progress["next_module"]:
+            status = "[yellow]Next[/yellow]"
+        else:
+            status = "[dim]Pending[/dim]"
+        table.add_row(str(i), name, status)
+
+    console.print()
+    console.print(table)
+    console.print(f"\n[bold]Progress:[/bold] {progress['percent_complete']:.0f}% complete")
+
+
+@click.group()
+@click.version_option(version="2.0.0")
+def cli():
+    """Sermon AI Bot - 12-Module Sermon Preparation System
+
+    A pastoral preparation tool that guides you from text to transformation.
+
+    QUICK START:
+      sermon prep        - Full guided preparation (recommended)
+      sermon module 1    - Work on a specific module
+
+    QUICK TOOLS:
+      sermon scriptures  - Find scriptures for a topic
+      sermon illustrations - Generate illustrations
+      sermon series      - Plan a sermon series
     """
     pass
 
 
-@cli.command()
-@click.argument("scripture")
-@click.option(
-    "--length", "-l",
-    default="20-25 minutes",
-    help="Target sermon length (e.g., '15 minutes', '30 minutes')"
-)
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def verse(scripture: str, length: str, save: bool):
-    """Generate a sermon from a Bible verse or passage.
+# =============================================================================
+# MAIN PREPARATION WORKFLOW
+# =============================================================================
 
-    SCRIPTURE: The Bible reference (e.g., "John 3:16" or "Romans 8:28-30")
+@cli.command()
+@click.option("--scripture", "-s", default="", help="Starting Bible passage")
+@click.option("--topic", "-t", default="", help="Starting topic (if no specific passage)")
+@click.option("--resume", "-r", default="", help="Resume from a saved session file")
+def prep(scripture: str, topic: str, resume: str):
+    """Start the full 12-module sermon preparation workflow.
+
+    This is the recommended way to prepare a sermon. It walks you through
+    each module sequentially, building context as you go.
+
+    Examples:
+      sermon prep -s "John 3:16"
+      sermon prep -t "forgiveness"
+      sermon prep -r sessions/my_sermon.json
     """
     config = check_config()
     generator = SermonGenerator(config)
 
-    console.print(f"\n[bold blue]Generating sermon from:[/bold blue] {scripture}")
-    console.print("[dim]This may take a moment...[/dim]\n")
+    # Resume or start new
+    if resume:
+        if os.path.exists(resume):
+            generator.load_session(resume)
+            console.print(f"[green]Resumed session from:[/green] {resume}")
+            show_progress_table(generator)
+        else:
+            console.print(f"[red]Session file not found:[/red] {resume}")
+            return
+    else:
+        # Get scripture or topic if not provided
+        if not scripture and not topic:
+            console.print(Panel(
+                "[bold]Welcome to the Sermon Preparation System[/bold]\n\n"
+                "This tool will walk you through 12 modules designed to help you\n"
+                "move from biblical text to transformational proclamation.\n\n"
+                "[dim]Based on the principle: Preaching is proclamation aimed at\n"
+                "transformation of the heart, not just information transfer.[/dim]",
+                title="Sermon AI Bot",
+                border_style="blue"
+            ))
 
-    with console.status("[bold green]Generating sermon..."):
-        result = generator.generate_sermon_from_verse(scripture, length)
+            choice = Prompt.ask(
+                "\n[bold]Start with[/bold]",
+                choices=["verse", "topic"],
+                default="verse"
+            )
 
-    print_result(result, f"Sermon: {scripture}")
+            if choice == "verse":
+                scripture = Prompt.ask("[bold]Enter Bible reference[/bold]")
+            else:
+                topic = Prompt.ask("[bold]Enter sermon topic[/bold]")
 
-    if save:
-        filename = save_to_file(result, "sermon_verse")
+        generator.new_session(scripture=scripture, topic=topic)
+
+    # Main preparation loop
+    while True:
+        progress = generator.get_progress()
+        next_module = progress["next_module"]
+
+        if next_module is None:
+            # All modules complete
+            console.print("\n[bold green]All modules complete![/bold green]")
+            if Confirm.ask("Would you like to assemble the full sermon?"):
+                with console.status("[bold green]Assembling sermon..."):
+                    result = generator.assemble_full_sermon()
+                print_result(result, "Complete Sermon")
+
+                if Confirm.ask("Save to file?"):
+                    filename = save_to_file(result, "sermon_complete")
+                    console.print(f"[green]Saved to:[/green] {filename}")
+            break
+
+        # Show current progress
+        show_progress_table(generator)
+
+        # Ask what to do
+        console.print(f"\n[bold]Next module:[/bold] {next_module}. {generator.get_module_name(next_module)}")
+
+        action = Prompt.ask(
+            "[bold]Action[/bold]",
+            choices=["continue", "skip", "jump", "save", "quit"],
+            default="continue"
+        )
+
+        if action == "quit":
+            if Confirm.ask("Save session before quitting?"):
+                save_session_interactive(generator)
+            break
+
+        elif action == "save":
+            save_session_interactive(generator)
+            continue
+
+        elif action == "skip":
+            generator.session.completed_modules.append(next_module)
+            console.print(f"[yellow]Skipped module {next_module}[/yellow]")
+            continue
+
+        elif action == "jump":
+            jump_to = Prompt.ask("Jump to module number", default=str(next_module))
+            try:
+                next_module = int(jump_to)
+                if not 1 <= next_module <= 12:
+                    console.print("[red]Module must be 1-12[/red]")
+                    continue
+            except ValueError:
+                console.print("[red]Invalid module number[/red]")
+                continue
+
+        # Run the module
+        run_module(generator, next_module)
+
+
+def run_module(generator: SermonGenerator, module_num: int):
+    """Run a specific module."""
+    module_name = generator.get_module_name(module_num)
+    print_module_header(module_num, module_name)
+
+    # Get optional preacher notes
+    notes = ""
+    if Confirm.ask("Do you have any thoughts or notes to add?", default=False):
+        notes = Prompt.ask("[dim]Your notes[/dim]")
+
+    # Run the appropriate module
+    with console.status(f"[bold green]Processing Module {module_num}..."):
+        if module_num == 1:
+            result = generator.module_1_define_preaching(notes)
+        elif module_num == 2:
+            result = generator.module_2_identify_audience(notes)
+        elif module_num == 3:
+            # Module 3 might need scripture input
+            if not generator.session.scripture:
+                scripture = Prompt.ask("[bold]Enter the primary Scripture passage[/bold]")
+                result = generator.module_3_text_and_target(scripture=scripture, target_notes=notes)
+            else:
+                result = generator.module_3_text_and_target(target_notes=notes)
+        elif module_num == 4:
+            result = generator.module_4_exegesis(notes)
+        elif module_num == 5:
+            result = generator.module_5_find_movement(notes)
+        elif module_num == 6:
+            result = generator.module_6_surprise_offense(notes)
+        elif module_num == 7:
+            result = generator.module_7_bridge_to_today(notes)
+        elif module_num == 8:
+            result = generator.module_8_bottom_line(notes)
+        elif module_num == 9:
+            result = generator.module_9_build_structure(notes)
+        elif module_num == 10:
+            result = generator.module_10_applications(notes)
+        elif module_num == 11:
+            result = generator.module_11_gospel_center(notes)
+        elif module_num == 12:
+            result = generator.module_12_preacher_formation(notes)
+        else:
+            console.print(f"[red]Unknown module: {module_num}[/red]")
+            return
+
+    print_result(result, f"Module {module_num}: {module_name}")
+
+    # Option to save output
+    if Confirm.ask("Save this module's output?", default=False):
+        filename = save_to_file(result, f"module_{module_num}")
         console.print(f"[green]Saved to:[/green] {filename}")
 
+
+def save_session_interactive(generator: SermonGenerator):
+    """Save the current session interactively."""
+    SESSIONS_DIR.mkdir(exist_ok=True)
+
+    default_name = f"sermon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    if generator.session.scripture:
+        default_name = f"sermon_{generator.session.scripture.replace(' ', '_').replace(':', '-')}.json"
+
+    filename = Prompt.ask("[bold]Session filename[/bold]", default=default_name)
+    filepath = SESSIONS_DIR / filename
+
+    generator.save_session(str(filepath))
+    console.print(f"[green]Session saved to:[/green] {filepath}")
+
+
+# =============================================================================
+# INDIVIDUAL MODULE ACCESS
+# =============================================================================
+
+@cli.command()
+@click.argument("module_num", type=int)
+@click.option("--scripture", "-s", default="", help="Bible passage for context")
+@click.option("--notes", "-n", default="", help="Your notes or thoughts")
+@click.option("--save", is_flag=True, help="Save output to file")
+def module(module_num: int, scripture: str, notes: str, save: bool):
+    """Run a specific module directly.
+
+    MODULE_NUM: The module number (1-12)
+
+    Modules:
+      1  - Define Preaching (Foundation)
+      2  - Identify the People (Audience)
+      3  - Pick the Text and Target
+      4  - Original Context Exegesis
+      5  - Find Movement in the Text
+      6  - Discover Surprise and Offense
+      7  - Bridge to Today
+      8  - Form the Bottom Line
+      9  - Build the Structure
+      10 - Application Engine
+      11 - Gospel Centering Check
+      12 - Preacher Formation
+
+    Example:
+      sermon module 4 -s "Romans 8:28" -n "Congregation struggling with suffering"
+    """
+    if not 1 <= module_num <= 12:
+        console.print("[red]Module number must be between 1 and 12[/red]")
+        return
+
+    config = check_config()
+    generator = SermonGenerator(config)
+
+    if scripture:
+        generator.session.scripture = scripture
+
+    module_name = generator.get_module_name(module_num)
+    print_module_header(module_num, module_name)
+
+    with console.status(f"[bold green]Processing Module {module_num}..."):
+        run_module(generator, module_num)
+
+
+# =============================================================================
+# QUICK TOOLS
+# =============================================================================
 
 @cli.command()
 @click.argument("topic")
-@click.option(
-    "--length", "-l",
-    default="20-25 minutes",
-    help="Target sermon length (e.g., '15 minutes', '30 minutes')"
-)
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def topic(topic: str, length: str, save: bool):
-    """Generate a sermon on a specific topic.
-
-    TOPIC: The sermon topic (e.g., "forgiveness", "faith in difficult times")
-    """
-    config = check_config()
-    generator = SermonGenerator(config)
-
-    console.print(f"\n[bold blue]Generating sermon on:[/bold blue] {topic}")
-    console.print("[dim]This may take a moment...[/dim]\n")
-
-    with console.status("[bold green]Generating sermon..."):
-        result = generator.generate_sermon_from_topic(topic, length)
-
-    print_result(result, f"Sermon: {topic}")
-
-    if save:
-        filename = save_to_file(result, "sermon_topic")
-        console.print(f"[green]Saved to:[/green] {filename}")
-
-
-@cli.command()
-@click.argument("input_value")
-@click.option(
-    "--verse", "-v",
-    is_flag=True,
-    default=True,
-    help="Treat input as a Bible verse (default)"
-)
-@click.option(
-    "--topic", "-t",
-    is_flag=True,
-    help="Treat input as a topic"
-)
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def outline(input_value: str, verse: bool, topic: bool, save: bool):
-    """Generate a sermon outline.
-
-    INPUT_VALUE: A Bible verse or topic for the outline
-    """
-    config = check_config()
-    generator = SermonGenerator(config)
-
-    is_verse = not topic
-    input_type = "verse" if is_verse else "topic"
-
-    console.print(f"\n[bold blue]Generating outline from {input_type}:[/bold blue] {input_value}")
-    console.print("[dim]This may take a moment...[/dim]\n")
-
-    with console.status("[bold green]Generating outline..."):
-        result = generator.generate_outline(input_value, is_verse)
-
-    print_result(result, f"Sermon Outline: {input_value}")
-
-    if save:
-        filename = save_to_file(result, "outline")
-        console.print(f"[green]Saved to:[/green] {filename}")
-
-
-@cli.command()
-@click.argument("topic")
-@click.option(
-    "--scripture", "-sc",
-    default="",
-    help="Related scripture for context"
-)
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def illustrations(topic: str, scripture: str, save: bool):
-    """Generate sermon illustrations for a topic.
-
-    TOPIC: The topic or theme for illustrations
-    """
-    config = check_config()
-    generator = SermonGenerator(config)
-
-    console.print(f"\n[bold blue]Generating illustrations for:[/bold blue] {topic}")
-    console.print("[dim]This may take a moment...[/dim]\n")
-
-    with console.status("[bold green]Generating illustrations..."):
-        result = generator.generate_illustrations(topic, scripture)
-
-    print_result(result, f"Illustrations: {topic}")
-
-    if save:
-        filename = save_to_file(result, "illustrations")
-        console.print(f"[green]Saved to:[/green] {filename}")
-
-
-@cli.command()
-@click.argument("topic")
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
+@click.option("--save", "-s", is_flag=True, help="Save output to file")
 def scriptures(topic: str, save: bool):
-    """Suggest Bible passages for a sermon topic.
+    """Find relevant Bible passages for a sermon topic.
 
-    TOPIC: The topic to find scriptures for
+    Example: sermon scriptures "dealing with anxiety"
     """
     config = check_config()
     generator = SermonGenerator(config)
 
     console.print(f"\n[bold blue]Finding scriptures for:[/bold blue] {topic}")
-    console.print("[dim]This may take a moment...[/dim]\n")
 
-    with console.status("[bold green]Finding scriptures..."):
-        result = generator.suggest_scriptures(topic)
+    with console.status("[bold green]Searching..."):
+        result = generator.quick_scriptures(topic)
 
     print_result(result, f"Scripture Suggestions: {topic}")
 
@@ -228,30 +372,46 @@ def scriptures(topic: str, save: bool):
 
 
 @cli.command()
-@click.argument("theme")
-@click.option(
-    "--count", "-c",
-    default=4,
-    help="Number of sermons in the series"
-)
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def series(theme: str, count: int, save: bool):
-    """Generate a sermon series plan.
+@click.argument("topic")
+@click.option("--scripture", "-sc", default="", help="Related scripture for context")
+@click.option("--bottom-line", "-bl", default="", help="The sermon's bottom line")
+@click.option("--save", "-s", is_flag=True, help="Save output to file")
+def illustrations(topic: str, scripture: str, bottom_line: str, save: bool):
+    """Generate sermon illustrations for a topic.
 
-    THEME: The overarching theme for the series
+    Example: sermon illustrations "hope" -sc "Romans 5:1-5"
     """
     config = check_config()
     generator = SermonGenerator(config)
 
-    console.print(f"\n[bold blue]Generating {count}-part series on:[/bold blue] {theme}")
-    console.print("[dim]This may take a moment...[/dim]\n")
+    console.print(f"\n[bold blue]Generating illustrations for:[/bold blue] {topic}")
 
-    with console.status("[bold green]Generating series..."):
-        result = generator.generate_sermon_series(theme, count)
+    with console.status("[bold green]Generating..."):
+        result = generator.quick_illustrations(topic, scripture, bottom_line)
+
+    print_result(result, f"Illustrations: {topic}")
+
+    if save:
+        filename = save_to_file(result, "illustrations")
+        console.print(f"[green]Saved to:[/green] {filename}")
+
+
+@cli.command()
+@click.argument("theme")
+@click.option("--count", "-c", default=4, help="Number of sermons in the series")
+@click.option("--save", "-s", is_flag=True, help="Save output to file")
+def series(theme: str, count: int, save: bool):
+    """Plan a sermon series on a theme.
+
+    Example: sermon series "The Beatitudes" --count 8
+    """
+    config = check_config()
+    generator = SermonGenerator(config)
+
+    console.print(f"\n[bold blue]Planning {count}-week series on:[/bold blue] {theme}")
+
+    with console.status("[bold green]Planning series..."):
+        result = generator.quick_series(theme, count)
 
     print_result(result, f"Sermon Series: {theme}")
 
@@ -261,143 +421,58 @@ def series(theme: str, count: int, save: bool):
 
 
 @cli.command()
-@click.argument("topic")
-@click.option(
-    "--scripture", "-sc",
-    default="",
-    help="Related scripture for context"
-)
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def prayers(topic: str, scripture: str, save: bool):
-    """Generate prayers for a sermon.
+@click.option("--save", "-s", is_flag=True, help="Save output to file")
+def ask(save: bool):
+    """Ask a custom sermon-related question.
 
-    TOPIC: The sermon topic for the prayers
+    Example: sermon ask
     """
     config = check_config()
     generator = SermonGenerator(config)
 
-    console.print(f"\n[bold blue]Generating prayers for:[/bold blue] {topic}")
-    console.print("[dim]This may take a moment...[/dim]\n")
+    request = Prompt.ask("[bold]What would you like help with?[/bold]")
 
-    with console.status("[bold green]Generating prayers..."):
-        result = generator.generate_prayers(topic, scripture)
+    with console.status("[bold green]Thinking..."):
+        result = generator.custom_request(request)
 
-    print_result(result, f"Prayers: {topic}")
+    print_result(result, "Response")
 
     if save:
-        filename = save_to_file(result, "prayers")
+        filename = save_to_file(result, "custom")
         console.print(f"[green]Saved to:[/green] {filename}")
 
 
+# =============================================================================
+# SESSION MANAGEMENT
+# =============================================================================
+
 @cli.command()
-@click.option(
-    "--save", "-s",
-    is_flag=True,
-    help="Save the output to a file"
-)
-def interactive(save: bool):
-    """Start an interactive sermon writing session."""
-    config = check_config()
-    generator = SermonGenerator(config)
+def sessions():
+    """List saved sermon preparation sessions."""
+    SESSIONS_DIR.mkdir(exist_ok=True)
 
-    console.print(Panel(
-        "[bold]Welcome to Sermon AI Bot Interactive Mode![/bold]\n\n"
-        "I'll help you create sermons, outlines, and more.\n"
-        "Type 'quit' or 'exit' to leave.",
-        title="Sermon AI Bot",
-        border_style="blue"
-    ))
+    session_files = list(SESSIONS_DIR.glob("*.json"))
 
-    while True:
-        console.print("\n[bold cyan]What would you like to create?[/bold cyan]")
-        console.print("1. Sermon from Bible verse")
-        console.print("2. Sermon from topic")
-        console.print("3. Sermon outline")
-        console.print("4. Sermon illustrations")
-        console.print("5. Scripture suggestions")
-        console.print("6. Sermon series plan")
-        console.print("7. Prayers")
-        console.print("8. Custom request")
-        console.print("9. Exit")
+    if not session_files:
+        console.print("[dim]No saved sessions found.[/dim]")
+        console.print("Start a new session with: [bold]sermon prep[/bold]")
+        return
 
-        choice = Prompt.ask(
-            "\n[bold]Enter your choice[/bold]",
-            choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "quit", "exit"],
-            default="1"
-        )
+    table = Table(title="Saved Sessions", border_style="blue")
+    table.add_column("Filename", style="cyan")
+    table.add_column("Modified", style="dim")
 
-        if choice in ["9", "quit", "exit"]:
-            console.print("\n[bold green]Thank you for using Sermon AI Bot. God bless![/bold green]\n")
-            break
+    for f in sorted(session_files, key=lambda x: x.stat().st_mtime, reverse=True):
+        mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        table.add_row(f.name, mtime)
 
-        result = None
-        title = "Result"
+    console.print(table)
+    console.print("\nResume with: [bold]sermon prep -r sessions/<filename>[/bold]")
 
-        if choice == "1":
-            scripture = Prompt.ask("[bold]Enter Bible reference[/bold]")
-            length = Prompt.ask("[bold]Sermon length[/bold]", default="20-25 minutes")
-            with console.status("[bold green]Generating sermon..."):
-                result = generator.generate_sermon_from_verse(scripture, length)
-            title = f"Sermon: {scripture}"
 
-        elif choice == "2":
-            topic = Prompt.ask("[bold]Enter sermon topic[/bold]")
-            length = Prompt.ask("[bold]Sermon length[/bold]", default="20-25 minutes")
-            with console.status("[bold green]Generating sermon..."):
-                result = generator.generate_sermon_from_topic(topic, length)
-            title = f"Sermon: {topic}"
-
-        elif choice == "3":
-            input_val = Prompt.ask("[bold]Enter verse or topic[/bold]")
-            is_verse = Confirm.ask("[bold]Is this a Bible verse?[/bold]", default=True)
-            with console.status("[bold green]Generating outline..."):
-                result = generator.generate_outline(input_val, is_verse)
-            title = f"Outline: {input_val}"
-
-        elif choice == "4":
-            topic = Prompt.ask("[bold]Enter topic for illustrations[/bold]")
-            scripture = Prompt.ask("[bold]Related scripture (optional)[/bold]", default="")
-            with console.status("[bold green]Generating illustrations..."):
-                result = generator.generate_illustrations(topic, scripture)
-            title = f"Illustrations: {topic}"
-
-        elif choice == "5":
-            topic = Prompt.ask("[bold]Enter topic to find scriptures[/bold]")
-            with console.status("[bold green]Finding scriptures..."):
-                result = generator.suggest_scriptures(topic)
-            title = f"Scriptures: {topic}"
-
-        elif choice == "6":
-            theme = Prompt.ask("[bold]Enter series theme[/bold]")
-            count = int(Prompt.ask("[bold]Number of sermons[/bold]", default="4"))
-            with console.status("[bold green]Generating series..."):
-                result = generator.generate_sermon_series(theme, count)
-            title = f"Series: {theme}"
-
-        elif choice == "7":
-            topic = Prompt.ask("[bold]Enter sermon topic[/bold]")
-            scripture = Prompt.ask("[bold]Related scripture (optional)[/bold]", default="")
-            with console.status("[bold green]Generating prayers..."):
-                result = generator.generate_prayers(topic, scripture)
-            title = f"Prayers: {topic}"
-
-        elif choice == "8":
-            request = Prompt.ask("[bold]Enter your custom request[/bold]")
-            with console.status("[bold green]Processing request..."):
-                result = generator.custom_request(request)
-            title = "Custom Request"
-
-        if result:
-            print_result(result, title)
-
-            if save or Confirm.ask("[bold]Save to file?[/bold]", default=False):
-                filename = save_to_file(result, title.lower().replace(" ", "_").replace(":", ""))
-                console.print(f"[green]Saved to:[/green] {filename}")
-
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 
 @cli.command()
 def config():
@@ -411,6 +486,40 @@ def config():
         title="Configuration",
         border_style="blue"
     ))
+
+
+@cli.command()
+def modules():
+    """List all 12 preparation modules."""
+    table = Table(title="12-Module Sermon Preparation System", border_style="blue")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Module", style="cyan")
+    table.add_column("Purpose", style="dim")
+
+    module_purposes = {
+        1: "Clarify transformation goal, not just information",
+        2: "Understand both churched and unchurched listeners",
+        3: "Anchor in Scripture, identify target condition",
+        4: "Understand original context before application",
+        5: "Trace geographic, emotional, theological movement",
+        6: "Recover the sharp edge of Scripture",
+        7: "Make ancient truth emotionally present",
+        8: "Distill to one memorable sentence",
+        9: "Build movements, chunks, and seams",
+        10: "Create specific, embodied, achievable applications",
+        11: "Ensure Jesus is central, not optional",
+        12: "Form the preacher, not just the sermon",
+    }
+
+    for i in range(1, 13):
+        name = SermonGenerator.MODULE_NAMES[i]
+        purpose = module_purposes[i]
+        table.add_row(str(i), name, purpose)
+
+    console.print()
+    console.print(table)
+    console.print("\nRun individual modules with: [bold]sermon module <number>[/bold]")
+    console.print("Start full preparation with: [bold]sermon prep[/bold]")
 
 
 def main():
